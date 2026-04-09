@@ -10,12 +10,19 @@ FPS = 60
 def main_menu(screen, clock):
     font = pygame.font.SysFont(None, 48)
     small = pygame.font.SysFont(None, 22)
+    tiny = pygame.font.SysFont(None, 20)
     selected = None
+    difficulty = 'Normal'
 
     panel = Rect(WIDTH//2 - 360//2, HEIGHT//2 - 280//2, 360, 280)
     start_btn = Rect(WIDTH//2 - 70, panel.bottom - 50, 140, 40)
     knight_rect = Rect(panel.left + 30, panel.top + 70, 120, 120)
     mage_rect = Rect(panel.right - 150, panel.top + 70, 120, 120)
+    # difficulty buttons
+    diff_y = panel.bottom - 95
+    easy_btn = Rect(panel.left + 20, diff_y, 100, 30)
+    normal_btn = Rect(panel.centerx - 50, diff_y, 100, 30)
+    hard_btn = Rect(panel.right - 120, diff_y, 100, 30)
 
     # try load previews from assets
     from assets import ASSETS
@@ -39,15 +46,29 @@ def main_menu(screen, clock):
                         selected = 'Wizard' if selected == 'Knight' else 'Knight'
                 if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
                     if selected:
-                        return 'Knight' if selected == 'Knight' else 'Wizard'
+                        skin = 'Knight' if selected == 'Knight' else 'Wizard'
+                        return (skin, difficulty)
+                if event.key == pygame.K_1:
+                    difficulty = 'Easy'
+                if event.key == pygame.K_2:
+                    difficulty = 'Normal'
+                if event.key == pygame.K_3:
+                    difficulty = 'Hard'
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
                 if start_btn.collidepoint((mx, my)) and selected:
-                    return 'Knight' if selected == 'Knight' else 'Wizard'
+                    skin = 'Knight' if selected == 'Knight' else 'Wizard'
+                    return (skin, difficulty)
                 if knight_rect.collidepoint((mx, my)):
                     selected = 'Knight'
                 if mage_rect.collidepoint((mx, my)):
                     selected = 'Mage'
+                if easy_btn.collidepoint((mx, my)):
+                    difficulty = 'Easy'
+                if normal_btn.collidepoint((mx, my)):
+                    difficulty = 'Normal'
+                if hard_btn.collidepoint((mx, my)):
+                    difficulty = 'Hard'
 
         # background panel
         screen.fill((20, 18, 22))
@@ -92,6 +113,24 @@ def main_menu(screen, clock):
 
         hint = small.render('Klikni na portrét nebo stiskni Tab pro přepnutí', True, (150,150,150))
         screen.blit(hint, (panel.centerx - hint.get_width()//2, panel.bottom - 20))
+
+        # difficulty UI
+        dtitle = tiny.render('Obtížnost (1/2/3):', True, (170, 170, 170))
+        screen.blit(dtitle, (panel.left + 20, diff_y - 22))
+
+        def draw_diff(btn, label, active):
+            bg = (70, 70, 70)
+            fg = (220, 220, 220)
+            if active:
+                bg = (240, 200, 50)
+                fg = (20, 20, 20)
+            pygame.draw.rect(screen, bg, btn, border_radius=6)
+            t = tiny.render(label, True, fg)
+            screen.blit(t, (btn.centerx - t.get_width()//2, btn.centery - t.get_height()//2))
+
+        draw_diff(easy_btn, 'Easy', difficulty == 'Easy')
+        draw_diff(normal_btn, 'Normal', difficulty == 'Normal')
+        draw_diff(hard_btn, 'Hard', difficulty == 'Hard')
 
         pygame.display.flip()
         clock.tick(FPS)
