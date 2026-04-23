@@ -1,8 +1,8 @@
 import pygame
 import random
-from player import Player
-from level import LevelManager
-from menu import main_menu, pause_menu
+from player.player import Player
+from game.level import LevelManager
+from menu.menu import main_menu, pause_menu
 from assets import ASSETS
 
 
@@ -24,21 +24,87 @@ class Game:
         except Exception:
             pass
 
-        walls = [
-            pygame.Rect(100, 100, 200, 24),
-            pygame.Rect(400, 200, 24, 250),
-            pygame.Rect(150, 400, 300, 24),
-        ]
-
-        # Zabraň hráči i nepřátelům odejít z mapy:
-        # přidáme hraniční stěny kolem celé obrazovky.
         border = 24
-        walls.extend([
-            pygame.Rect(0, 0, self.WIDTH, border),  # top
-            pygame.Rect(0, self.HEIGHT - border, self.WIDTH, border),  # bottom
-            pygame.Rect(0, 0, border, self.HEIGHT),  # left
-            pygame.Rect(self.WIDTH - border, 0, border, self.HEIGHT),  # right
-        ])
+
+        def build_border_walls():
+            return [
+                pygame.Rect(0, self.HEIGHT - border, self.WIDTH, border),  # floor
+                pygame.Rect(0, 0, border, self.HEIGHT),  # left wall
+                pygame.Rect(self.WIDTH - border, 0, border, self.HEIGHT),  # right wall
+            ]
+
+        def generate_level_walls(level_no, blocked_rects=None):
+            blocked_rects = blocked_rects or []
+            generated = build_border_walls()
+            player_rect = blocked_rects[0] if blocked_rects else pygame.Rect(self.WIDTH // 2 - 24, 80, 48, 48)
+
+            # Náhodné platformy: kombinace "schodů" + náhodných platforem.
+            interior_count = min(6, 2 + level_no)
+            max_tries = 320
+            placed = 0
+
+            # Základní schody, aby byly platformy vždy dosažitelné skokem.
+            step_w = 160
+            step_h = 20
+            step_gap_y = 64
+            x = border + 40
+            y = self.HEIGHT - border - 72
+            direction = 1
+            for _ in range(5):
+                x = max(border + 12, min(self.WIDTH - border - step_w - 12, x))
+                y = max(90, min(self.HEIGHT - 140, y))
+                generated.append(pygame.Rect(int(x), int(y), step_w, step_h))
+                x += direction * 130
+                y -= step_gap_y
+                if x > self.WIDTH - border - step_w - 20 or x < border + 20:
+                    direction *= -1
+
+            # Garantovaná dostupná platforma nad startem hráče.
+            starter_w = 220
+            starter_h = 20
+            starter_x = max(border + 12, min(self.WIDTH - border - starter_w - 12, player_rect.centerx - starter_w // 2))
+            starter_y = self.HEIGHT - border - 86
+            starter = pygame.Rect(int(starter_x), int(starter_y), starter_w, starter_h)
+            if not any(starter.colliderect(existing) for existing in generated):
+                generated.append(starter)
+
+            for _ in range(max_tries):
+                if placed >= interior_count:
+                    break
+
+                w = random.choice([120, 144, 168, 192, 216, 240])
+                h = 20
+
+                x = random.randrange(border + 10, self.WIDTH - border - w - 10, 24)
+                y = random.randrange(80, self.HEIGHT - 120, 24)
+                candidate = pygame.Rect(x, y, w, h)
+
+                # Nepokládej zeď přes hráče/enemy spawny (s malým okrajem).
+                if any(candidate.colliderect(r.inflate(90, 90)) for r in blocked_rects):
+                    continue
+
+                # Nepřekrývej se s jinými zdmi.
+                if any(candidate.colliderect(existing) for existing in generated):
+                    continue
+
+                generated.append(candidate)
+                placed += 1
+
+            return generated
+
+        def place_on_platform(rect, platforms):
+            nearest = None
+            for p in platforms:
+                # Ignore side walls as landing surfaces.
+                if p.width <= border:
+                    continue
+                if rect.centerx >= p.left - 8 and rect.centerx <= p.right + 8 and p.top >= rect.top:
+                    if nearest is None or p.top < nearest.top:
+                        nearest = p
+            if nearest:
+                rect.bottom = nearest.top
+                return True
+            return False
 
         menu_result = main_menu(screen, clock)
         if isinstance(menu_result, tuple):
@@ -76,34 +142,32 @@ class Game:
                 except Exception:
                     pass
 
-        # náhodný spawn hráče na začátku (mimo zdi)
-        def random_free_pos(size):
-            margin = border + 6
-            for _ in range(200):
-                x = random.randint(margin, self.WIDTH - margin - size)
-                y = random.randint(margin, self.HEIGHT - margin - size)
-                r = pygame.Rect(x, y, size, size)
-                if not any(r.colliderect(w) for w in walls):
-                    return x, y
-            # fallback
-            return self.WIDTH // 2 - size // 2, self.HEIGHT // 2 - size // 2
-
-        spawn_x, spawn_y = random_free_pos(48)
+        # Spawn hráče v horní části; po vygenerování platforem ho "přicvakneme" na nejbližší.
+        spawn_x = self.WIDTH // 2 - 24
+        spawn_y = 80
         player = Player(spawn_x, spawn_y, skin=selected_skin)
 
         attack_effects = []
         player_projectiles = []
+        super_projectiles = []
         enemy_projectiles = []
         heart_rect = None
         heart_timer = random.randint(self.FPS * 8, self.FPS * 14)
         max_lives = 5
         level_manager = LevelManager()
         enemies = level_manager.load_current()
+        walls = generate_level_walls(level_manager.get_level_number(), [player.rect, *[e.rect for e in enemies]])
+        player.snap_to_ground(walls)
+        for e in enemies:
+            place_on_platform(e.rect, walls)
+            if hasattr(e, "vel_y"):
+                e.vel_y = 0.0
         apply_difficulty(enemies)
         level_transition_timer = 0
         level_cleared_display = 0
 
         font = pygame.font.SysFont(None, 24)
+        wall_img = ASSETS.get_scaled('wall', (24, 24))
 
         running = True
         while running:
@@ -115,7 +179,9 @@ class Game:
                         action = pause_menu(screen, clock)
                         if action == 'quit':
                             running = False
-                    elif event.key == pygame.K_SPACE or event.key == pygame.K_f:
+                    elif event.key == pygame.K_SPACE:
+                        player.jump()
+                    elif event.key == pygame.K_f:
                         a = player.attack()
                         if a:
                             kind, payload = a
@@ -123,9 +189,13 @@ class Game:
                                 attack_effects.append([payload, 6])
                             elif kind == 'ranged':
                                 player_projectiles.append(payload)
+                    elif event.key == pygame.K_v:
+                        sp = player.super_attack()
+                        if sp:
+                            super_projectiles.append(sp)
 
-            direction = player.handle_input()
-            player.move(direction, walls)
+            move_x = player.handle_input()
+            player.move(move_x, walls)
             player.update()
 
             for eff in attack_effects[:]:
@@ -159,6 +229,21 @@ class Game:
                             enemies.remove(e)
                         break
 
+            # homing super projectiles
+            for sp in super_projectiles[:]:
+                alive = True
+                hit_enemy = None
+                try:
+                    alive, hit_enemy = sp.update(enemies, walls)
+                except Exception:
+                    alive = False
+                if hit_enemy is not None and hit_enemy in enemies:
+                    hit_enemy.hp -= getattr(sp, 'damage', 999)
+                    if hit_enemy.hp <= 0:
+                        enemies.remove(hit_enemy)
+                if not alive:
+                    super_projectiles.remove(sp)
+
             # enemy melee + ranged attacks
             for e in enemies:
                 # melee: damage on contact (with per-enemy cooldown)
@@ -181,8 +266,11 @@ class Game:
             if heart_rect is None:
                 heart_timer -= 1
                 if heart_timer <= 0:
-                    hx, hy = random_free_pos(heart_size)
+                    hx = random.randint(border + 20, self.WIDTH - border - heart_size - 20)
+                    hy = 80
                     heart_rect = pygame.Rect(hx, hy, heart_size, heart_size)
+                    place_on_platform(heart_rect, walls)
+                    heart_rect.y -= heart_rect.height
                     heart_timer = random.randint(self.FPS * 10, self.FPS * 18)
             else:
                 if player.rect.colliderect(heart_rect):
@@ -219,9 +307,16 @@ class Game:
                 level_transition_timer -= 1
                 if level_transition_timer == 0 and level_manager.has_next():
                     enemies = level_manager.load_current()
+                    walls = generate_level_walls(level_manager.get_level_number(), [player.rect, *[e.rect for e in enemies]])
+                    player.snap_to_ground(walls)
+                    for e in enemies:
+                        place_on_platform(e.rect, walls)
+                        if hasattr(e, "vel_y"):
+                            e.vel_y = 0.0
                     apply_difficulty(enemies)
                     enemy_projectiles.clear()
                     player_projectiles.clear()
+                    super_projectiles.clear()
                     heart_rect = None
 
             # background
@@ -242,8 +337,7 @@ class Game:
             else:
                 screen.fill((30, 30, 30))
 
-            # walls (try to use wall tile if available)
-            wall_img = ASSETS.get('wall')
+            # walls (use img/wall.png as repeating 24x24 tile)
             for w in walls:
                 if wall_img:
                     # tile the wall rect with the wall image
@@ -267,6 +361,12 @@ class Game:
             for p in enemy_projectiles:
                 try:
                     p.draw(screen)
+                except Exception:
+                    pass
+
+            for sp in super_projectiles:
+                try:
+                    sp.draw(screen)
                 except Exception:
                     pass
 
@@ -297,6 +397,9 @@ class Game:
 
             hp_surf = font.render(f"HP: {player.hp}/{getattr(player, 'max_hp', player.hp)}   Lives: {getattr(player, 'lives', 0)}", True, (220, 220, 220))
             screen.blit(hp_surf, (8, 8))
+            super_cd = getattr(player, 'super_cooldown', 0)
+            super_txt = font.render(f"Super(V): {'READY' if super_cd <= 0 else super_cd}", True, (220, 220, 180))
+            screen.blit(super_txt, (8, 30))
 
             pygame.display.flip()
             clock.tick(self.FPS)

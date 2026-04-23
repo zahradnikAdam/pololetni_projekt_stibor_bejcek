@@ -1,4 +1,4 @@
-from enemy import Slime, Bat, Skeleton, Rat, Dragon
+from game.enemy import Slime, Bat, Skeleton, Rat, Dragon
 
 
 class LevelManager:
