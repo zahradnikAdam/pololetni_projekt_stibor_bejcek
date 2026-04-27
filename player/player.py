@@ -1,8 +1,17 @@
+"""Model hráče a jeho „helper“ objekty.
+
+OOP pohled:
+- `Player` je stavový objekt (má vlastní data + metody, které tento stav mění).
+- Projektily jsou samostatné objekty s vlastním `update()/draw()`. Hra je drží
+  v seznamech (kompozice) místo toho, aby byly „natvrdo“ uvnitř `Player`.
+"""
+
 import pygame
 from assets import ASSETS
 
 
 class PlayerProjectile:
+    """Datový objekt projektilu (vlastní stav + update/draw)."""
     def __init__(self, x, y, vel, size=10, damage=1, ttl=90, color=(120, 220, 255)):
         self.rect = pygame.Rect(int(x), int(y), int(size), int(size))
         self.vel = pygame.Vector2(vel)
@@ -32,7 +41,8 @@ class PlayerProjectile:
 
 
 class HomingSuperProjectile:
-    def __init__(self, x, y, size=16, speed=9.0, damage=999, ttl=120):
+    """Varianta projektilu s jiným chováním (jiný update)."""
+    def __init__(self, x, y, size=16, speed=9.0, damage=2, ttl=120):
         self.rect = pygame.Rect(int(x), int(y), int(size), int(size))
         self.speed = float(speed)
         self.damage = int(damage)
@@ -144,16 +154,10 @@ class Player:
         self.jump_buffer = self.jump_buffer_max
 
     def move(self, move_x, walls):
-        def is_one_way_platform(w):
-            return w.width > w.height and w.height <= 24
-
         # Horizontal movement
         if move_x != 0:
             self.rect.x += int(round(move_x * self.speed))
             for w in walls:
-                if is_one_way_platform(w):
-                    # one-way platforms do not block from the sides
-                    continue
                 if self.rect.colliderect(w):
                     if move_x > 0:
                         self.rect.right = w.left
@@ -173,19 +177,11 @@ class Player:
             self.jump_buffer = 0
 
         # Gravity + vertical movement
-        prev_bottom = self.rect.bottom
         self.vel_y = min(self.max_fall_speed, self.vel_y + self.gravity)
         self.rect.y += int(round(self.vel_y))
         self.on_ground = False
         for w in walls:
             if self.rect.colliderect(w):
-                if is_one_way_platform(w):
-                    # Land only when falling from above the platform.
-                    if self.vel_y >= 0 and prev_bottom <= w.top + 6:
-                        self.rect.bottom = w.top
-                        self.on_ground = True
-                        self.vel_y = 0.0
-                    continue
                 if self.vel_y > 0:
                     self.rect.bottom = w.top
                     self.on_ground = True
@@ -216,6 +212,7 @@ class Player:
             self.coyote_timer = self.coyote_max
 
     def update(self):
+        # Centralizace „tikání“ timerů/cooldownů do jedné metody.
         if self.jump_buffer > 0:
             self.jump_buffer -= 1
         if self.attack_cooldown > 0:

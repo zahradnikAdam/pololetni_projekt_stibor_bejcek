@@ -1,3 +1,13 @@
+"""`LevelManager` – malý stavový objekt (OOP).
+
+Drží:
+- data o levelech (konfigurace),
+- aktuální index (`current`),
+a poskytuje metody, jak se v nich posouvat.
+
+Je to „manager“ objekt: nemá render ani fyziku, jen spravuje stav postupu.
+"""
+
 from game.enemy import Slime, Bat, Skeleton, Rat, Dragon
 
 
@@ -14,9 +24,11 @@ class LevelManager:
         self.current = 0
 
     def has_next(self):
+        # Dotaz na stav objektu (bez vedlejších efektů).
         return self.current < len(self.levels)
 
     def load_current(self):
+        # Factory-like metoda: z konfigurace vytvoří konkrétní objekty nepřátel.
         enemies = []
         if not self.has_next():
             return enemies
@@ -26,7 +38,9 @@ class LevelManager:
         return enemies
 
     def advance(self):
+        # Změna stavu objektu (mutace): posune aktuální index.
         self.current += 1
 
     def get_level_number(self):
+        # Číslo levelu pro UI (1-based).
         return self.current + 1

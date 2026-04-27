@@ -1,3 +1,11 @@
+"""`Assets` – služba (service object) pro obrázky.
+
+OOP pohled:
+- `Assets` zapouzdřuje načítání a cache obrázků (ostatní části hry neřeší cesty).
+- Ostatní objekty používají jen rozhraní `get()` / `get_scaled()`.
+- `ASSETS` je singleton instance sdílená napříč moduly.
+"""
+
 import os
 import pygame
 import re
@@ -56,6 +64,10 @@ class Assets:
                 # pickups / UI
                 if 'heart' in cleaned_key or 'srdce' in cleaned_key:
                     self.images['heart'] = surf
+                if 'shield' in cleaned_key or 'stit' in cleaned_key:
+                    self.images['shield'] = surf
+                if 'power' in cleaned_key or 'boost' in cleaned_key or 'skull' in cleaned_key:
+                    self.images['power'] = surf
 
                 # backgrounds (podle levelu)
                 # podporuje názvy typu: background_1.png, background-level2.png, level3_background.png, bg4.png ...
@@ -101,6 +113,9 @@ class Assets:
             'boss': 'boss.png',
             'background': 'background.png',
             'wall': 'wall.png',
+            'heart': 'heart.png',
+            'shield': 'shield.png',
+            'power': 'power.png',
         }
         for key, fname in self.map.items():
             path = os.path.join(self.base, fname)
@@ -116,9 +131,11 @@ class Assets:
                 self.images[key] = None
 
     def get(self, name):
+        # Jednoduché rozhraní: key -> surface.
         return self.images.get(name)
 
     def get_scaled(self, name, size):
+        # Utility metoda: key -> surface přepočítaný na velikost pro UI/hitbox.
         surf = self.get(name)
         if surf:
             # Dodatečná konverze až ve chvíli, kdy už je inicializovaný display.

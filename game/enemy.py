@@ -1,3 +1,12 @@
+"""Nepřátelé – dědičnost a polymorfismus.
+
+OOP struktura:
+- `Enemy` je základní třída (sdílený stav + sdílené metody).
+- Konkrétní nepřátelé jsou potomci (`Slime`, `Bat`, `Skeleton`, `Rat`, `Dragon`)
+  a mění parametry nebo přepisují `update()` (polymorfismus).
+- `Projectile` je samostatný objekt používaný u ranged útoků (kompozice).
+"""
+
 import pygame
 import random
 import math
@@ -5,6 +14,7 @@ from assets import ASSETS
 
 
 class Projectile:
+    """Samostatný objekt projektilu (stav + chování)."""
     def __init__(self, x, y, vel, size=10, damage=1, color=(255, 120, 80), sprite_key=None):
         self.rect = pygame.Rect(int(x), int(y), int(size), int(size))
         self.vel = pygame.Vector2(vel)
@@ -16,6 +26,7 @@ class Projectile:
             self._sprite_cache = ASSETS.get_scaled(self.sprite_key, (self.rect.width, self.rect.height))
 
     def update(self, walls):
+        # Pohyb po osách + early exit při nárazu.
         self.rect.x += int(self.vel.x)
         for w in walls:
             if self.rect.colliderect(w):
@@ -77,6 +88,7 @@ class Enemy:
         self.max_fall_speed = 11.5
         self.on_ground = False
         self.jump_cooldown = 0
+        self.random_jump_timer = random.randint(20, 70)
 
         # pro wander AI
         self.wander_dir = pygame.Vector2(random.uniform(-1, 1), random.uniform(-1, 1))
@@ -105,7 +117,22 @@ class Enemy:
                 return True
         return False
 
+    def _has_reachable_platform_above(self, walls):
+        """Simple check: is there any platform above that could be reached by a jump."""
+        for w in walls:
+            if w.width <= w.height:
+                continue
+            vertical_gap = self.rect.bottom - w.top
+            if vertical_gap < 45 or vertical_gap > 190:
+                continue
+            # Allow platforms that are somewhat left/right from enemy position.
+            if w.right < self.rect.left - 120 or w.left > self.rect.right + 120:
+                continue
+            return True
+        return False
+
     def _move_platformer(self, move_x, walls):
+        # Sdílená implementace pohybu: potomci ji mohou znovupoužít.
         blocked_horizontally = False
         if move_x != 0:
             self.rect.x += int(round(move_x * self.speed))
@@ -142,45 +169,46 @@ class Enemy:
         return blocked_horizontally
 
     def update(self, player, walls):
+        # Základní AI smyčka pro pozemní nepřátele.
         if self.attack_cooldown > 0:
             self.attack_cooldown -= 1
         if self.jump_cooldown > 0:
             self.jump_cooldown -= 1
+        if self.random_jump_timer > 0:
+            self.random_jump_timer -= 1
 
-        move_x = 0.0
-        if self.ai == 'follow':
-            if player.rect.centerx > self.rect.centerx + 6:
-                move_x = 1.0
-            elif player.rect.centerx < self.rect.centerx - 6:
-                move_x = -1.0
-        else:  # wander
-            if self.wander_timer <= 0:
-                self.wander_dir = pygame.Vector2(random.choice([-1, 1]), 0)
-                self.wander_timer = random.randint(30, 120)
-            else:
-                self.wander_timer -= 1
-
-            move_x = self.wander_dir.x
+        # Všichni nepřátelé se pohybují náhodně (wander).
+        if self.wander_timer <= 0:
+            self.wander_dir = pygame.Vector2(random.choice([-1, 1]), 0)
+            self.wander_timer = random.randint(20, 90)
+        else:
+            self.wander_timer -= 1
+        move_x = self.wander_dir.x
 
         # Keep enemies on platforms unless they intentionally jump.
         if self.on_ground and not self._has_ground_ahead(move_x, walls):
-            if self.ai == 'wander':
-                self.wander_dir.x *= -1
-                move_x = self.wander_dir.x
-            else:
-                move_x = 0.0
+            self.wander_dir.x *= -1
+            move_x = self.wander_dir.x
 
         blocked = self._move_platformer(move_x, walls)
 
-        # Chce-li nepřítel k hráči a ten je výš, zkusí skočit.
-        if self.on_ground and player.rect.centery < self.rect.centery - 24 and abs(player.rect.centerx - self.rect.centerx) < 260:
+        # Hráč je výš -> skoč.
+        if self.on_ground and player.rect.centery < self.rect.centery - 24 and abs(player.rect.centerx - self.rect.centerx) < 320:
             self._jump()
+
+        # Je nad nepřítelem platforma v dosahu -> zkus skočit.
+        if self.on_ground and self._has_reachable_platform_above(walls):
+            self._jump()
+
+        # Náhodný jump, aby se dokázali dostat i z přízemí na různé platformy.
+        if self.on_ground and self.random_jump_timer <= 0:
+            self._jump()
+            self.random_jump_timer = random.randint(25, 80)
 
         # Pokud narazí do stěny, zkusí jump + změnu směru.
         if blocked and self.on_ground:
             self._jump()
-            if self.ai != 'follow':
-                self.wander_dir.x *= -1
+            self.wander_dir.x *= -1
 
     def try_attack(self, player):
         """Vrátí Projectile pro ranged útok, nebo None. Melee řeší Game smyčka přes kolizi."""
@@ -256,6 +284,7 @@ class Bat(Enemy):
         self.float_phase = random.uniform(0.0, 6.28)
 
     def update(self, player, walls):
+        # Polymorfismus: Bat přepisuje `update()` (létání místo platformer pohybu).
         if self.attack_cooldown > 0:
             self.attack_cooldown -= 1
 
@@ -296,9 +325,50 @@ class Skeleton(Enemy):
 class Rat(Enemy):
     def __init__(self, x, y):
         # tank původně byl moc silný -> výrazně lehčí
-        # ai='follow' aby aktivně útočil na hráče
         super().__init__(x, y, size=52, speed=1.0, hp=6, color=(150, 90, 90), ai='follow', attack_type='melee', attack_damage=1, attack_cooldown_max=55, attack_range=85)
         self.max_hp = 6
+        self.special_cooldown = random.randint(20, 70)
+        self.special_cooldown_max = 95
+
+    def update(self, player, walls):
+        super().update(player, walls)
+        if self.special_cooldown > 0:
+            self.special_cooldown -= 1
+
+    def try_special_attack(self, player):
+        """Rat special: krátká trojitá střela (šílený burst)."""
+        if self.special_cooldown > 0:
+            return []
+
+        d = pygame.Vector2(player.rect.center) - pygame.Vector2(self.rect.center)
+        if d.length_squared() > 300 * 300:
+            return []
+        if d.length_squared() == 0:
+            d = pygame.Vector2(1, 0)
+        else:
+            d = d.normalize()
+
+        # 3 střely s lehkým vertikálním rozptylem.
+        shots = []
+        for dy in (-0.24, 0.0, 0.24):
+            v = pygame.Vector2(d.x, d.y + dy)
+            if v.length_squared() == 0:
+                v = pygame.Vector2(1, 0)
+            else:
+                v = v.normalize()
+            shots.append(
+                Projectile(
+                    self.rect.centerx - 7,
+                    self.rect.centery - 7,
+                    vel=v * 6.2,
+                    size=14,
+                    damage=1,
+                    color=(255, 70, 70),
+                )
+            )
+
+        self.special_cooldown = self.special_cooldown_max
+        return shots
 
 
 class Dragon(Enemy):
@@ -312,3 +382,54 @@ class Dragon(Enemy):
             projectile_size=24, projectile_sprite_key='meteor'
         )
         self.max_hp = 16
+        self.fly_mode = False
+        self.mode_timer = random.randint(120, 220)
+        self.float_phase = random.uniform(0.0, 6.28)
+
+    def update(self, player, walls):
+        # Dragon střídá režim země/létání.
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= 1
+        if self.jump_cooldown > 0:
+            self.jump_cooldown -= 1
+        if self.random_jump_timer > 0:
+            self.random_jump_timer -= 1
+
+        self.mode_timer -= 1
+        if self.mode_timer <= 0:
+            self.fly_mode = not self.fly_mode
+            self.mode_timer = random.randint(120, 240) if self.fly_mode else random.randint(140, 260)
+            if self.fly_mode:
+                self.vel_y = 0.0
+                self.on_ground = False
+
+        if self.fly_mode:
+            # Létání: pomalé přibližování k hráči + vertikální vlnění.
+            d = pygame.Vector2(player.rect.center) - pygame.Vector2(self.rect.center)
+            move = pygame.Vector2(0, 0)
+            if d.length_squared() > 0:
+                move = d.normalize()
+            self.float_phase += 0.05
+            move.y += 0.22 * math.sin(self.float_phase)
+            if move.length_squared() > 0:
+                move = move.normalize()
+
+            fly_speed = max(1.0, self.speed * 0.9)
+            self.rect.x += int(round(move.x * fly_speed))
+            for w in walls:
+                if self.rect.colliderect(w):
+                    if move.x > 0:
+                        self.rect.right = w.left
+                    elif move.x < 0:
+                        self.rect.left = w.right
+
+            self.rect.y += int(round(move.y * fly_speed))
+            for w in walls:
+                if self.rect.colliderect(w):
+                    if move.y > 0:
+                        self.rect.bottom = w.top
+                    elif move.y < 0:
+                        self.rect.top = w.bottom
+        else:
+            # Země: používá běžné platformer chování z Enemy.
+            super().update(player, walls)
