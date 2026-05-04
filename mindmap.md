@@ -1,149 +1,183 @@
 ## OOP mindmap – Pololetní projekt (PyGame)
 
-- **Entry point**
-  - **`main.py`**
-    - **vytváří instance**
-      - `Game()`
-    - **volá metody**
-      - `Game.run()`
+### 1) Vstup aplikace
 
-- **Orchestrátor aplikace**
-  - **`game/game.py` → `class Game`**
-    - **role (OOP)**
-      - “koordinátor” (kompozice): drží a propojuje objekty, sám není herní entita
-    - **vytváří instance / vlastní stav**
-      - `Player(...)` → objekt hráče
-      - `LevelManager()` → objekt správy levelů
-      - `enemies: list[Enemy]` → seznam instancí nepřátel (potomci `Enemy`)
-      - `walls: list[pygame.Rect]` → mapové platformy/zdi (datové objekty)
-      - `player_projectiles: list[PlayerProjectile]`
-      - `super_projectiles: list[HomingSuperProjectile]`
-      - `enemy_projectiles: list[Projectile]`
-      - pickup recty (`heart_rect`, `shield_rect`, `power_rect`) + timery efektů
-    - **klíčové metody (API třídy)**
-      - `_generate_level_walls(level_no, blocked_rects)`  
-        - generuje `pygame.Rect` platformy (ne třídy), které používají Player/Enemy pro kolize
-      - `_apply_difficulty(enemies_list, difficulty, level_manager)`  
-        - upraví parametry existujících instancí nepřátel (mutuje objekty)
-      - `_place_on_platform(rect, platforms)`  
-        - pomocná metoda: “přicvakne” rect na nejbližší platformu
-      - `_show_end_screen(screen, clock, won)`  
-        - UI smyčka pro konec hry (samostatný “režim”)
-      - `run()`  
-        - hlavní smyčka: sběr inputu → update objektů → kolize → draw → přechody levelů
-    - **jak používá polymorfismus**
-      - drží `enemies` jako seznam objektů s jednotným rozhraním:
-        - `e.update(player, walls)`
-        - `e.draw(screen)`
-        - `e.try_attack(player)` (u ranged útoků)
-      - konkrétní chování se liší podle třídy nepřítele (např. `Bat.update()` je jiné)
+- **`main.py`**
+  - vytváří `Game()`
+  - spouští `Game.run()`
+  - drží minimum logiky (single responsibility: jen start programu)
 
-- **Hráč (stavový objekt) + jeho “helper” objekty**
-  - **`player/player.py`**
-    - **`class Player`**
-      - **role (OOP)**
-        - stateful objekt: má vlastní data (HP, životy, cooldowny, pozice) + metody, které stav mění
-      - **vlastní stav (příklady atributů)**
-        - `rect`, `hp/max_hp`, `lives`, `speed`, `vel_y`, `on_ground`
-        - `attack_cooldown`, `super_cooldown`, `hit_invuln`…
-      - **klíčové metody**
-        - `handle_input()` → vrací horizontální směr pohybu (neposouvá svět)
-        - `jump()` → nastaví buffer skoku (stav)
-        - `move(move_x, walls)` → fyzika + kolize s `walls`
-        - `update()` → “tick” timerů/cooldownů (centralizace)
-        - `take_damage(amount)` → mutuje HP/lives, řeší respawn
-        - `respawn()` / `snap_to_ground(walls)`
-        - `attack()` → **vrací polymorfní výsledek podle skinu**
-          - `('melee', pygame.Rect)` nebo `('ranged', PlayerProjectile)` nebo `None`
-        - `super_attack()` → vrací `HomingSuperProjectile` nebo `None`
-        - `draw(surface)` → render (sprite nebo fallback)
-    - **`class PlayerProjectile`**
-      - **role (OOP)**
-        - samostatný objekt s vlastním stavem a metodami `update()/draw()`
-      - **metody**
-        - `update(walls)` → vrátí `False` když TTL vyprší nebo narazí do zdi
-        - `draw(surface)`
-    - **`class HomingSuperProjectile`**
-      - **role (OOP)**
-        - další typ projektilu: stejný “kontrakt” (`update/draw`), jiné chování (navádění)
-      - **metody**
-        - `update(enemies, walls)` → vrací `(alive: bool, hit_enemy_or_None)`
-        - `draw(surface)`
+---
 
-- **Nepřátelé (dědičnost + polymorfismus) + projektil nepřátel**
-  - **`game/enemy.py`**
-    - **`class Enemy` (base class)**
-      - **role (OOP)**
-        - společný základ: sdílený stav + sdílené metody pohybu/kolizí/timerů
-      - **klíčové metody**
-        - `update(player, walls)` → defaultní AI (wander + platformer pohyb)
-        - `try_attack(player)` → vrací `Projectile` pro ranged, nebo `None`
-        - `draw(surface)` → render + HP bar
-        - interní helper metody (`_move_platformer`, `_jump`, …)
-    - **potomci `Enemy` (inheritance)**
-      - `class Slime(Enemy)`
-        - typicky jen nastaví parametry v `__init__` (nepřepisuje update)
-      - `class Skeleton(Enemy)`
-        - ranged nastavení v parametrech
-      - `class Rat(Enemy)`
-        - přidává vlastní stav `special_cooldown`
-        - přidává metodu `try_special_attack(player)` (navíc k base API)
-      - `class Bat(Enemy)` **(polymorfismus)**
-        - přepisuje `update()` → létání (jiná fyzika než base platformer)
-      - `class Dragon(Enemy)` **(polymorfismus)**
-        - přepisuje `update()` → střídá režimy země/létání
-    - **`class Projectile`**
-      - **role (OOP)**
-        - samostatný objekt pro ranged útoky nepřátel
-      - **metody**
-        - `update(walls)` → zaniká při kolizi
-        - `draw(surface)`
+### 2) Hlavní orchestrátor
 
-- **Postup levelů (stavový “manager”)**
-  - **`game/level.py` → `class LevelManager`**
-    - **role (OOP)**
-      - stateful objekt: drží konfiguraci levelů + index aktuálního levelu
-    - **vytváří instance**
-      - `load_current()` vytváří konkrétní `Enemy` potomky podle konfigurace
-    - **metody**
-      - `has_next()` → dotaz na stav (bez side effect)
-      - `load_current()` → “factory-like” tvorba `enemies`
-      - `advance()` → mutace stavu (posun indexu)
-      - `get_level_number()` → 1-based číslo pro UI
+- **`game/game.py` → `class Game`**
+  - **role**
+    - koordinační objekt; propojuje gameplay, UI, level flow, spawn, kolize
+    - není herní entita, ale aplikační controller
+  - **vlastní stav / kompozice**
+    - `Player`
+    - `LevelManager`
+    - `ScoreTracker`
+    - kolekce runtime objektů: `enemies`, `walls`, `player_projectiles`, `enemy_projectiles`, `super_projectiles`
+    - pickupy: `heart_rect`, `shield_rect`, `power_rect` + timery
+    - přechody levelů + end-state (`level_transition_timer`, `level_cleared_display`, `game_won`)
+  - **hlavní metody**
+    - `_build_border_walls()` → okraje mapy
+    - `_generate_level_walls(level_no, blocked_rects)` → procedural platform layout s průchodem
+    - `_place_on_platform(rect, platforms)` → přicvaknutí rectu na platformu
+    - `_apply_difficulty(enemies_list, difficulty, level_manager)` → scaling nepřátel
+    - `_has_clear_path_between(a_rect, b_rect, walls)` → line-of-sight kontrola (melee nesmí přes zeď)
+    - `_show_end_screen(screen, clock, won)` → finální UI smyčka
+    - `run()` → game loop: input → update → kolize/damage → draw → level transition
+  - **combat flow**
+    - hráč: melee/ranged (`F`), super (`V`)
+    - enemy: melee + ranged + special rat burst
+    - super hit se počítá do damage, ale **ne** do skóre
+  - **score flow**
+    - při zásahu melee/ranged hráče volá `score_tracker.register_hit()`
+    - v HUD renderuje `Score` a `Hits`
 
-- **UI (kompozice v `Game`)**
-  - **`menu/menu.py`**
-    - **`class MainMenu`**
-      - **role (OOP)**
-        - UI komponenta se svým stavem (selected skin, difficulty) a vlastním `run()` cyklem
-      - **metody**
-        - `run()` → blokuje, dokud nevrátí výsledek (`(skin, difficulty)`), nebo neukončí program
-        - `_handle_events()`, `_handle_key()`, `_handle_click()`, `_draw()`
-    - **`class PauseMenu`**
-      - **role (OOP)**
-        - další UI komponenta: vrací `resume`/`quit` apod.
-      - **metody**
-        - `run()`, `_handle_events()`, `_draw()`, `_settings_loop()`
+---
 
-- **Assets (služba + singleton)**
-  - **`assets.py`**
-    - **`class Assets`**
-      - **role (OOP)**
-        - service object: zapouzdřuje načítání a cache obrázků
-      - **metody**
-        - `get(key)` → vrátí surface nebo `None`
-        - `get_scaled(key, size)` → vrátí surface v požadované velikosti
-    - **instance / singleton**
-      - `ASSETS = Assets()`  
-        - sdílená instance importovaná v `Game`, `Player`, `Enemy`, menu…
+### 3) Hráč a hráčské projektily
 
-- **Shrnutí OOP použití (rychle)**
-  - **dědičnost**
-    - `Enemy` → `Slime/Bat/Skeleton/Rat/Dragon`
-  - **polymorfismus**
-    - `Game` volá `update()/draw()` na nepřátelích bez ohledu na konkrétní třídu
-    - projektily mají jednotné “rozhraní” `update()/draw()` (různé chování uvnitř)
-  - **kompozice**
-    - `Game` “skládá” systém: drží instance `Player`, `LevelManager`, seznamy `Enemy` a projektilů
-  - **zapouzdření**
-    - `Assets` skrývá detaily načítání souborů; ostatní používají jen `get/get_scaled`
+- **`player/player.py`**
+  - **`class Player`**
+    - **stav**
+      - pozice/fyzika: `rect`, `speed`, `vel_y`, `gravity`, `on_ground`
+      - život: `hp`, `max_hp`, `lives`, `spawn_pos`
+      - boj: `attack_cooldown`, `attack_damage`, `super_cooldown`
+      - obrana: `hit_invuln`
+      - mobilita: `jump_buffer`, `coyote_timer`, `facing`
+      - **double jump**: `max_air_jumps`, `air_jumps_left`
+    - **chování**
+      - `handle_input()` → horizontální input + facing
+      - `jump()` → vloží jump do bufferu
+      - `move(move_x, walls)` → fyzika + kolize + spotřeba air jumpu ve vzduchu
+      - `update()` → tik cooldownů/timerů
+      - `take_damage()` → hp/lives/respawn logika
+      - `respawn()` a `snap_to_ground(walls)` → reset fyziky a air jumpů
+      - `attack()` → polymorfní návrat:
+        - `('melee', pygame.Rect)` pro Knight
+        - `('ranged', PlayerProjectile)` pro Mage/Wizard
+      - `super_attack()` → `HomingSuperProjectile`
+      - `draw(surface)` → sprite + fallback + invuln blink + směrová čára
+  - **`class PlayerProjectile`**
+    - drží vlastní `rect`, `vel`, `damage`, `ttl`
+    - `update(walls)` vrací alive/dead
+    - `draw(surface)` render
+  - **`class HomingSuperProjectile`**
+    - navádění na cíl (priorita Bat, jinak nejbližší enemy)
+    - `update(enemies, walls)` vrací `(alive, hit_enemy_or_None)`
+    - `draw(surface)` render
+
+---
+
+### 4) Nepřátelé a enemy projektily
+
+- **`game/enemy.py`**
+  - **`class Enemy` (base)**
+    - společný stav: HP, pohyb, cooldowny, AI parametry, útok
+    - společné helpery: `_move_platformer`, `_jump`, `_has_ground_ahead`, `_has_reachable_platform_above`
+    - public API: `update(player, walls)`, `try_attack(player)`, `draw(surface)`
+  - **dědičnost (`Enemy` potomci)**
+    - `Slime` → melee, lehký
+    - `Bat` → přepisuje `update()` (létání)
+    - `Skeleton` → ranged
+    - `Rat` → melee + `try_special_attack()` (burst 3 střel)
+    - `Dragon` → boss, přepíná země/létání, ranged meteor
+  - **`class Projectile`**
+    - enemy ranged projektil
+    - `update(walls)` + `draw(surface)`
+
+---
+
+### 5) Správa levelů
+
+- **`game/level.py` → `class LevelManager`**
+  - drží konfiguraci levelů (`self.levels`) a index (`self.current`)
+  - `load_current()` vytváří konkrétní instance enemy tříd (factory-like přístup)
+  - `advance()` posouvá level
+  - `has_next()` a `get_level_number()` poskytují stav do UI/game flow
+
+---
+
+### 6) Skóre (nová samostatná třída)
+
+- **`game/score.py` → `class ScoreTracker`**
+  - **role**
+    - zapouzdřuje pravidla bodování za zásahy enemy
+  - **stav**
+    - `score`, `hits`, `points_per_hit`
+  - **API**
+    - `register_hit()` → přidá hit + body
+    - `get_score()`
+    - `get_hits()`
+  - **poznámka**
+    - super útok (`HomingSuperProjectile`) se do skóre nepřičítá
+
+---
+
+### 7) Menu/UI komponenty
+
+- **`menu/menu.py`**
+  - **`class MainMenu`**
+    - drží stav výběru skinu + obtížnosti
+    - metody: `run()`, `_handle_events()`, `_handle_key()`, `_handle_click()`, `_draw()`
+    - vrací tuple `(skin, difficulty)`
+    - layout obsahuje:
+      - title + subtitle
+      - výběr skinu (Knight/Wizard)
+      - tlačítka obtížnosti (Easy/Normal/Hard)
+      - `Start Game`
+      - hint text pod panelem (aby se nepřekrýval s tlačítky)
+    - text `Obtiznost (1/2/3):` byl odstraněn (zůstávají jen tlačítka)
+  - **`class PauseMenu`**
+    - vrací `resume` / `quit`
+    - obsahuje `_settings_loop()` s ovládáním
+
+---
+
+### 8) Asset service + singleton
+
+- **`assets.py` → `class Assets`**
+  - zapouzdření načítání obrázků + cache
+  - mapování názvů souborů na logické klíče (`player_knight`, `slime`, `background_1`, ...)
+  - API: `get(name)` a `get_scaled(name, size)`
+- **singleton**
+  - `ASSETS = Assets()`
+  - sdílená instance napříč `Game`, `Player`, `Enemy`, `MainMenu`
+
+---
+
+### 9) OOP principy v projektu (shrnutí)
+
+- **dědičnost**
+  - `Enemy` → `Slime`, `Bat`, `Skeleton`, `Rat`, `Dragon`
+- **polymorfismus**
+  - jednotné volání `update()/draw()/try_attack()` přes různé enemy třídy
+  - jednotný kontrakt projektilů (`update/draw`) s odlišnou implementací
+- **kompozice**
+  - `Game` skládá herní systém z objektů (`Player`, `LevelManager`, `ScoreTracker`, seznamy projektilů/enemy)
+- **zapouzdření**
+  - `Assets` skrývá práci se soubory obrázků
+  - `ScoreTracker` skrývá pravidla bodování
+  - `Player` skrývá interní fyziku a jump state
+
+---
+
+### 10) Runtime datové toky (rychlá mapa)
+
+- **input**
+  - klávesy/mouse → `MainMenu` nebo `Game.run()`
+- **update**
+  - `Player.update()` + `Enemy.update()` + projektily `update()`
+- **kolize**
+  - rect-vs-rect: hráč/enemy/projektil/walls/pickupy
+  - line-of-sight check u melee enemy proti hráči
+- **score**
+  - běžné hity hráče → `ScoreTracker.register_hit()`
+  - super hity → damage ano, score ne
+- **render**
+  - background → walls → enemies/projectiles/pickupy → player → HUD

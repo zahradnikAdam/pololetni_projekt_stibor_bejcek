@@ -15,6 +15,7 @@ import pygame
 import random
 from player.player import Player
 from game.level import LevelManager
+from game.score import ScoreTracker
 from menu.menu import MainMenu, PauseMenu
 from assets import ASSETS
 
@@ -194,6 +195,15 @@ class Game:
             return True
         return False
 
+    def _has_clear_path_between(self, a_rect, b_rect, walls):
+        """True when no wall blocks direct path between two entities."""
+        start = a_rect.center
+        end = b_rect.center
+        for w in walls:
+            if w.clipline(start, end):
+                return False
+        return True
+
     def _apply_difficulty(self, enemies_list, difficulty, level_manager):
         # Easy/Normal/Hard upraví nepřátele (rychlost, HP, střelbu)
         if difficulty == 'Easy':
@@ -275,11 +285,9 @@ class Game:
             if won:
                 title = title_font.render("Viteztvi!", True, (244, 255, 228))
                 line1 = sub_font.render("Dekuji za dohrani hry.", True, (218, 236, 220))
-                line2 = small_font.render("Tvoje legenda v dungeonu pokracuje...", True, (182, 210, 186))
             else:
                 title = title_font.render("Konec hry", True, (255, 225, 225))
                 line1 = sub_font.render("Nevadi, zkus to znovu.", True, (230, 210, 210))
-                line2 = small_font.render("Kazdy hrdina nekdy padne.", True, (214, 182, 182))
 
             btn_bg = (110, 210, 135) if hover_replay and frame >= min_show_frames else (74, 112, 86)
             btn_fg = (8, 20, 10) if hover_replay and frame >= min_show_frames else (220, 240, 225)
@@ -288,12 +296,8 @@ class Game:
             replay_txt = small_font.render("Hrat znovu (R)", True, btn_fg)
             screen.blit(replay_txt, (replay_btn.centerx - replay_txt.get_width() // 2, replay_btn.centery - replay_txt.get_height() // 2))
 
-            hint = small_font.render("Enter / Esc / klik mimo tlacitko = konec", True, (185, 185, 205))
-
             screen.blit(title, (self.WIDTH // 2 - title.get_width() // 2, panel.top + 28))
             screen.blit(line1, (self.WIDTH // 2 - line1.get_width() // 2, panel.top + 112))
-            screen.blit(line2, (self.WIDTH // 2 - line2.get_width() // 2, panel.top + 150))
-            screen.blit(hint, (self.WIDTH // 2 - hint.get_width() // 2, panel.bottom - 30))
 
             pygame.display.flip()
             clock.tick(self.FPS)
@@ -336,6 +340,7 @@ class Game:
         power_active_timer = 0
         max_lives = 5
         level_manager = LevelManager()
+        score_tracker = ScoreTracker(points_per_hit=10)
         enemies = level_manager.load_current()
         walls = self._generate_level_walls(level_manager.get_level_number(), [player.rect, *[e.rect for e in enemies]])
         player.snap_to_ground(walls)
@@ -392,6 +397,7 @@ class Game:
                     if atk_rect.colliderect(e.rect):
                         dmg_mul = 2 if power_active_timer > 0 else 1
                         e.hp -= player.attack_damage * dmg_mul
+                        score_tracker.register_hit()
                         if e.hp <= 0:
                             enemies.remove(e)
 
@@ -409,6 +415,7 @@ class Game:
                     if p.rect.colliderect(e.rect):
                         dmg_mul = 2 if power_active_timer > 0 else 1
                         e.hp -= getattr(p, 'damage', player.attack_damage) * dmg_mul
+                        score_tracker.register_hit()
                         player_projectiles.remove(p)
                         if e.hp <= 0:
                             enemies.remove(e)
@@ -423,13 +430,8 @@ class Game:
                 except Exception:
                     alive = False
                 if hit_enemy is not None and hit_enemy in enemies:
-                    # Super útok: Dragon na 5 ran, Rat na 2 rány.
-                    if hit_enemy.__class__.__name__ == "Dragon":
-                        super_damage = max(1, (int(getattr(hit_enemy, 'max_hp', hit_enemy.hp)) + 4) // 5)
-                    elif hit_enemy.__class__.__name__ == "Rat":
-                        super_damage = max(1, (int(getattr(hit_enemy, 'max_hp', hit_enemy.hp)) + 1) // 2)
-                    else:
-                        super_damage = int(getattr(sp, 'damage', 2))
+                    base_super_damage = int(sp.damage)
+                    super_damage = hit_enemy.get_super_hit_damage(base_super_damage)
                     if power_active_timer > 0:
                         super_damage *= 2
                     hit_enemy.hp -= super_damage
@@ -441,30 +443,26 @@ class Game:
             # enemy melee + ranged attacks
             for e in enemies:
                 # melee: damage on contact (with per-enemy cooldown)
-                if getattr(e, 'attack_type', None) == 'melee':
+                if e.attack_type == 'melee':
                     dist = pygame.Vector2(player.rect.center).distance_to(pygame.Vector2(e.rect.center))
-                    melee_range = float(getattr(e, 'attack_range', 85))
-                    if dist <= melee_range and getattr(e, 'attack_cooldown', 0) <= 0:
+                    melee_range = float(e.attack_range)
+                    if (
+                        dist <= melee_range
+                        and e.attack_cooldown <= 0
+                        and self._has_clear_path_between(e.rect, player.rect, walls)
+                    ):
                         if shield_active_timer <= 0:
-                            player.take_damage(getattr(e, 'attack_damage', 1))
-                        e.attack_cooldown = getattr(e, 'attack_cooldown_max', 50)
+                            player.take_damage(e.attack_damage)
+                        e.attack_cooldown = e.attack_cooldown_max
 
                 # ranged: spawn projectile if ready
-                p = None
-                try:
-                    p = e.try_attack(player)
-                except Exception:
-                    p = None
+                p = e.try_attack(player)
                 if p:
                     enemy_projectiles.append(p)
                 # rat special burst
-                if hasattr(e, "try_special_attack"):
-                    try:
-                        shots = e.try_special_attack(player)
-                    except Exception:
-                        shots = []
-                    for shot in shots:
-                        enemy_projectiles.append(shot)
+                shots = e.try_special_attack(player)
+                for shot in shots:
+                    enemy_projectiles.append(shot)
 
             # heart spawn + pickup
             heart_size = 40
@@ -665,6 +663,8 @@ class Game:
 
             hp_surf = font.render(f"HP: {player.hp}/{getattr(player, 'max_hp', player.hp)}   Lives: {getattr(player, 'lives', 0)}", True, (220, 220, 220))
             screen.blit(hp_surf, (8, 8))
+            score_surf = font.render(f"Score: {score_tracker.get_score()}   Hits: {score_tracker.get_hits()}", True, (220, 240, 180))
+            screen.blit(score_surf, (8, 96))
             super_cd = getattr(player, 'super_cooldown', 0)
             super_txt = font.render(f"Super(V): {'READY' if super_cd <= 0 else super_cd}", True, (220, 220, 180))
             screen.blit(super_txt, (8, 30))

@@ -130,8 +130,10 @@ class MainMenu:
 
         title = self.title_font.render("Dungeon Arena", True, (244, 244, 252))
         subtitle = self.subtitle_font.render("Vyber hrdinu a obtiznost", True, (188, 196, 220))
-        self.screen.blit(title, (self.WIDTH//2 - title.get_width()//2, self.panel.top - 78))
-        self.screen.blit(subtitle, (self.WIDTH//2 - subtitle.get_width()//2, self.panel.top - 38))
+        title_y = self.panel.top - 88
+        subtitle_y = title_y + title.get_height() - 2
+        self.screen.blit(title, (self.WIDTH//2 - title.get_width()//2, title_y))
+        self.screen.blit(subtitle, (self.WIDTH//2 - subtitle.get_width()//2, subtitle_y))
 
         head = self.small.render("Vyber si skin", True, (235, 235, 242))
         self.screen.blit(head, (self.panel.centerx - head.get_width()//2, self.panel.top + 24))
@@ -164,10 +166,10 @@ class MainMenu:
         self.screen.blit(st, (self.start_btn.centerx - st.get_width()//2, self.start_btn.centery - st.get_height()//2))
 
         hint = self.tiny.render('Klikni na portrét nebo stiskni Tab pro přepnutí', True, (168, 172, 188))
-        self.screen.blit(hint, (self.panel.centerx - hint.get_width()//2, self.panel.bottom - 20))
+        # Place helper text below panel to avoid overlap with controls.
+        hint_y = self.panel.bottom + 10
+        self.screen.blit(hint, (self.panel.centerx - hint.get_width()//2, hint_y))
 
-        dtitle = self.tiny.render('Obtiznost (1/2/3):', True, (182, 186, 204))
-        self.screen.blit(dtitle, (self.panel.left + 20, self.diff_y - 22))
         self._draw_diff_btn(self.easy_btn, 'Easy', self.difficulty == 'Easy')
         self._draw_diff_btn(self.normal_btn, 'Normal', self.difficulty == 'Normal')
         self._draw_diff_btn(self.hard_btn, 'Hard', self.difficulty == 'Hard')

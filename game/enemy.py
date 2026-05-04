@@ -241,6 +241,14 @@ class Enemy:
         self.attack_cooldown = self.attack_cooldown_max
         return p
 
+    def try_special_attack(self, player):
+        """Defaultně nepřítel nemá speciální útok."""
+        return []
+
+    def get_super_hit_damage(self, base_damage):
+        """Kolik damage dostane enemy od super projektilu."""
+        return int(base_damage)
+
     def draw(self, surface):
         # choose asset key based on class name
         key_map = {
@@ -370,6 +378,10 @@ class Rat(Enemy):
         self.special_cooldown = self.special_cooldown_max
         return shots
 
+    def get_super_hit_damage(self, base_damage):
+        # Rat padne přibližně na 2 super zásahy.
+        return max(1, (int(getattr(self, 'max_hp', self.hp)) + 1) // 2)
+
 
 class Dragon(Enemy):
     def __init__(self, x, y):
@@ -433,3 +445,7 @@ class Dragon(Enemy):
         else:
             # Země: používá běžné platformer chování z Enemy.
             super().update(player, walls)
+
+    def get_super_hit_damage(self, base_damage):
+        # Dragon padne přibližně na 5 super zásahů.
+        return max(1, (int(getattr(self, 'max_hp', self.hp)) + 4) // 5)

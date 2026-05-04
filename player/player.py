@@ -127,6 +127,8 @@ class Player:
         self.jump_buffer_max = 8
         self.coyote_timer = 0
         self.coyote_max = 8
+        self.max_air_jumps = 1
+        self.air_jumps_left = self.max_air_jumps
 
         # útok
         self.attack_cooldown = 0
@@ -170,11 +172,18 @@ class Player:
         elif self.coyote_timer > 0:
             self.coyote_timer -= 1
 
-        if self.jump_buffer > 0 and self.coyote_timer > 0:
-            self.vel_y = -self.jump_strength
-            self.on_ground = False
-            self.coyote_timer = 0
-            self.jump_buffer = 0
+        if self.jump_buffer > 0:
+            # Ground/coyote jump has priority; otherwise consume one air jump.
+            if self.coyote_timer > 0:
+                self.vel_y = -self.jump_strength
+                self.on_ground = False
+                self.coyote_timer = 0
+                self.jump_buffer = 0
+            elif self.air_jumps_left > 0:
+                self.vel_y = -self.jump_strength
+                self.on_ground = False
+                self.air_jumps_left -= 1
+                self.jump_buffer = 0
 
         # Gravity + vertical movement
         self.vel_y = min(self.max_fall_speed, self.vel_y + self.gravity)
@@ -186,6 +195,7 @@ class Player:
                     self.rect.bottom = w.top
                     self.on_ground = True
                     self.vel_y = 0.0
+                    self.air_jumps_left = self.max_air_jumps
                 elif self.vel_y < 0:
                     self.rect.top = w.bottom
                     self.vel_y = 0.0
@@ -195,6 +205,7 @@ class Player:
         self.rect.topleft = self.spawn_pos
         self.vel_y = 0.0
         self.on_ground = False
+        self.air_jumps_left = self.max_air_jumps
 
     def snap_to_ground(self, walls):
         # Place player on nearest platform below spawn.
@@ -210,6 +221,7 @@ class Player:
             self.on_ground = True
             self.vel_y = 0.0
             self.coyote_timer = self.coyote_max
+            self.air_jumps_left = self.max_air_jumps
 
     def update(self):
         # Centralizace „tikání“ timerů/cooldownů do jedné metody.
